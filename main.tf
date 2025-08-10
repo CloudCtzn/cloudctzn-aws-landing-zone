@@ -99,7 +99,7 @@ resource "aws_s3_bucket_policy" "cloudtrail_bucket_policy" {
           Service = "cloudtrail.amazonaws.com"
         },
         Action = "s3:GetBucketAcl",
-        Resource = aws_s3_bucket.cloudtrail_log_bucket.arn # Correct for bucket ACL check
+        Resource = aws_s3_bucket.cloudtrail_log_bucket.arn
       },
       {
         Sid    = "AWSCloudTrailWrite",
@@ -108,17 +108,14 @@ resource "aws_s3_bucket_policy" "cloudtrail_bucket_policy" {
           Service = "cloudtrail.amazonaws.com"
         },
         Action = "s3:PutObject",
-        # This Resource ARN must be a list for organization trails
-        # It covers logs from the Management Account and Organization members
         Resource = [
-          "${aws_s3_bucket.cloudtrail_log_bucket.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*", # For logs from Management Account
-          "${aws_s3_bucket.cloudtrail_log_bucket.arn}/AWSLogs/${data.aws_organizations_organization.main.id}/*" # For logs from Organization members
+          "${aws_s3_bucket.cloudtrail_log_bucket.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*",
+          "${aws_s3_bucket.cloudtrail_log_bucket.arn}/AWSLogs/${data.aws_organizations_organization.main.id}/*"
         ],
         Condition = {
           StringEquals = {
             "s3:x-amz-acl" = "bucket-owner-full-control"
           },
-          # This condition is crucial for organization trails to restrict writes to specific CloudTrail ARNs
           "ArnLike": {
             "aws:SourceArn": [
               "arn:aws:cloudtrail:${var.aws_region}:${data.aws_caller_identity.current.account_id}:trail/*",
@@ -135,7 +132,7 @@ resource "aws_s3_bucket_policy" "cloudtrail_bucket_policy" {
 resource "aws_cloudtrail" "organization_trail" {
   name                          = "CloudCtzn-Organization-Trail"
   s3_bucket_name                = aws_s3_bucket.cloudtrail_log_bucket.id
-  is_organization_trail         = true # This argument makes it organization-wide
+  is_organization_trail         = true
   include_global_service_events = true
   is_multi_region_trail         = true
 
@@ -146,35 +143,30 @@ resource "aws_cloudtrail" "organization_trail" {
 }
 
 # IAM Role for AWS Config
-# This role grants AWS Config the necessary permissions to record resource configurations
-# and deliver them to my S3 bucket and SNS topic (if its configured) 
 resource "aws_iam_role" "config_recorder_role" {
   name = "CloudCtzn-ConfigRecorderRole"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
-	{
-	  Action = "sts:AssumeRole",
-	  Effect = "Allow"
-	  Sid = "",
-	  Principal = {
-		Service = "config.amazonaws.com"
-		}
-	   }
-	]
-    })
+      {
+        Action = "sts:AssumeRole",
+        Effect = "Allow",
+        Sid    = "",
+        Principal = {
+          Service = "config.amazonaws.com"
+        }
+      }
+    ]
+  })
 
-	tags = {
-	name = "CloudCtzn-ConfigRecorderRole"
-	Environment = "LandingZone"
-	}
-    }
-
+  tags = {
+    Name        = "CloudCtzn-ConfigRecorderRole"
+    Environment = "LandingZone"
+  }
+}
 
 # IAM Policy for AWS Config Role
-# This policy generates permissons to read resource configurations,
-# deliver logs to S3, and publish to SNS.
 resource "aws_iam_role_policy" "config_recorder_policy" {
   name = "CloudCtzn-ConfigRecorderPolicy"
   role = aws_iam_role.config_recorder_role.id
@@ -190,8 +182,8 @@ resource "aws_iam_role_policy" "config_recorder_policy" {
         ],
         Effect = "Allow",
         Resource = [
-          "${aws_s3_bucket.cloudtrail_log_bucket.arn}/AWSConfig/*", # For objects within the AWSConfig prefix
-          aws_s3_bucket.cloudtrail_log_bucket.arn # For the bucket itself (needed for GetBucketAcl)
+          "${aws_s3_bucket.cloudtrail_log_bucket.arn}/AWSConfig/*",
+          aws_s3_bucket.cloudtrail_log_bucket.arn
         ]
       },
       {
@@ -234,67 +226,121 @@ resource "aws_iam_role_policy" "config_recorder_policy" {
   })
 }
 
-
 # AWS Config Configuration Recorder
-# This records configuration changes for all supported resources in the region.
 resource "aws_config_configuration_recorder" "recorder" {
-	name = "CloudCtzn-ConfigRecorder"
-	role_arn = aws_iam_role.config_recorder_role.arn
+  name     = "CloudCtzn-ConfigRecorder"
+  role_arn = aws_iam_role.config_recorder_role.arn
 
-	# Records all resource types 
-	recording_group {
-	  all_supported = true
-	  include_global_resource_types = true
-	}
+  recording_group {
+    all_supported = true
+    include_global_resource_types = true
+  }
 
-	depends_on = [
-	  aws_iam_role_policy.config_recorder_policy # Ensures policy is attached before recorder is created 
-	]
-    }
+  depends_on = [
+    aws_iam_role_policy.config_recorder_policy
+  ]
+}
 
-# AWS Config Delivery Channel 
-# This specifies where AWS Config will send its configuration snapshots and history.
+# AWS Config Delivery Channel
 resource "aws_config_delivery_channel" "delivery_channel" {
-	name = "CloudCtzn_ConfigDeliveryChannel"
-	s3_bucket_name = aws_s3_bucket.cloudtrail_log_bucket.id # Reusing the S3 CloudTrail bucket 
-	s3_key_prefix = "AWSConfig" # Store Config Logs under a separate prefix in the bucket 
+  name           = "CloudCtzn-ConfigDeliveryChannel"
+  s3_bucket_name = aws_s3_bucket.cloudtrail_log_bucket.id
+  s3_key_prefix  = "AWSConfig"
 
-	depends_on = [
-	  aws_config_configuration_recorder.recorder # Ensures recorder is setup first
-	]
-    }
+  depends_on = [
+    aws_config_configuration_recorder.recorder
+  ]
+}
 
-# AWS Config Rule: Check if S3 buckets are public
-# This rule examines whether S3 buckets pubicly acessible. 
+# AWS Config Rule: Check if S3 buckets are public (example)
 resource "aws_config_config_rule" "s3_bucket_public_read_prohibited" {
-	name = "s3-bucket-public-read-prohibited"
-	description = "Checks if S3 buckets are pubicly readable. Non-compliant is public read access is granted."
-	source { 
-	  owner = "AWS"
-	  source_identifier = "S3_BUCKET_PUBLIC_READ_PROHIBITED"
-	}
-	scope {
-	   compliance_resource_types = ["AWS::S3::Bucket"]
-	}
+  name        = "s3-bucket-public-read-prohibited"
+  description = "Checks if S3 buckets are publicly readable. Non-compliant if public read access is granted."
+  source {
+    owner             = "AWS"
+    source_identifier = "S3_BUCKET_PUBLIC_READ_PROHIBITED"
+  }
+  scope {
+    compliance_resource_types = ["AWS::S3::Bucket"]
+  }
 
-	depends_on = [
-	  aws_config_configuration_recorder.recorder,
-	  aws_config_delivery_channel.delivery_channel # Ensure Config is recording and watching
-	]
-    }
+  depends_on = [
+    aws_config_configuration_recorder.recorder,
+    aws_config_delivery_channel.delivery_channel
+  ]
+}
+
+# AWS Config Rule: Ensure all S3 buckets are encrypted
+resource "aws_config_config_rule" "s3_bucket_encrypted" {
+  name        = "s3-bucket-encrypted"
+  description = "Checks if S3 buckets have server-side encryption enabled. Non-compliant if not enabled."
+  source {
+    owner             = "AWS"
+    source_identifier = "S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED" 
+  }
+  scope {
+    compliance_resource_types = ["AWS::S3::Bucket"]
+  }
+
+  depends_on = [
+    aws_config_configuration_recorder.recorder,
+    aws_config_delivery_channel.delivery_channel
+  ]
+}
+
+# AWS Config Rule: Check if MFA is enabled for the Root account
+resource "aws_config_config_rule" "root_account_mfa_enabled" {
+  name        = "root-account-mfa-enabled"
+  description = "Checks whether the root account has multi-factor authentication (MFA) enabled. Non-compliant if MFA is not enabled."
+  source {
+    owner             = "AWS"
+    source_identifier = "ROOT_ACCOUNT_MFA_ENABLED"
+  }
+  scope {
+    compliance_resource_types = ["AWS::IAM::User"]
+  }
+
+  depends_on = [
+    aws_config_configuration_recorder.recorder,
+    aws_config_delivery_channel.delivery_channel
+  ]
+}
+
+# AWS Config Rule: Ensure EC2 instances are not publicly accessible
+resource "aws_config_config_rule" "ec2_instance_no_public_ip" {
+  name        = "ec2-instance-no-public-ip"
+  description = "Checks whether running EC2 instances have a public IP address. Non-compliant if a public IP is assigned."
+  source {
+    owner             = "AWS"
+    source_identifier = "EC2_INSTANCE_NO_PUBLIC_IP"
+  }
+  scope {
+    compliance_resource_types = ["AWS::EC2::Instance"]
+  }
+
+  depends_on = [
+    aws_config_configuration_recorder.recorder,
+    aws_config_delivery_channel.delivery_channel
+  ]
+}
 
 # Start the Config Recorder after everything is set up
 resource "null_resource" "start_config_recorder" {
-	triggers = {
-		always_run = timestamp() # Ensures this runs on every apply 
-	}
-	provisioner "local-exec" {
-		command = "aws configservice start-configuration-recorder --configuration-recorder-name ${aws_config_configuration_recorder.recorder.name}"
-		interpreter = ["bash", "-c"]
-	}
+  triggers = {
+    always_run = timestamp()
+  }
 
-	depends_on = [
-		aws_config_delivery_channel.delivery_channel,
-		aws_config_configuration_recorder.recorder
-	]
-    }
+  provisioner "local-exec" {
+    command = "aws configservice start-configuration-recorder --configuration-recorder-name ${aws_config_configuration_recorder.recorder.name}"
+    interpreter = ["bash", "-c"]
+  }
+
+  depends_on = [
+    aws_config_delivery_channel.delivery_channel,
+    aws_config_configuration_recorder.recorder,
+    aws_config_config_rule.s3_bucket_public_read_prohibited,
+    aws_config_config_rule.s3_bucket_encrypted,
+    aws_config_config_rule.root_account_mfa_enabled,
+    aws_config_config_rule.ec2_instance_no_public_ip
+  ]
+}
