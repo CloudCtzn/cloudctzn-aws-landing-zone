@@ -1,0 +1,5 @@
+log_archive_account_id     = "587736032238" 
+audit_account_id           = "586549104216"     
+shared_services_account_id = "562311163927"
+workload_account_id        = "051208504916"
+sandbox_account_id         = "773611811305"
