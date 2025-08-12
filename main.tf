@@ -500,3 +500,52 @@ resource "aws_organizations_policy" "restrict_regions" {
 	    })
 	}
 
+# Assign AWSAdministratorAccess permission set to the Log Archive Account
+resource "aws_ssoadmin_account_assignment" "log_archive_admin_assignment" {
+	instance_arn = tolist(data.aws_ssoadmin_instances.main.arns)[0]
+	permission_set_arn = aws_ssoadmin_permission_set.administrator_access.arn
+	target_id = aws_organizations_account.log_archive.id
+	principal_type = "GROUP"
+	principal_id = "2458a468-f061-707b-daaa-2242295c93dc"
+	target_type = "AWS_ACCOUNT"
+ }
+
+# Assign AWSAdministratorAccess permission set to the Audit Account
+resource "aws_ssoadmin_account_assignment" "audit_admin_assignment" {
+	instance_arn = tolist(data.aws_ssoadmin_instances.main.arns)[0]
+	permission_set_arn = aws_ssoadmin_permission_set.administrator_access.arn
+	target_id = aws_organizations_account.audit.id
+	principal_type = "GROUP"
+	principal_id = "2458a468-f061-707b-daaa-2242295c93dc"
+	target_type = "AWS_ACCOUNT"
+ }
+
+# Assign AWSAdministratorAccess permission set to the Shared Services Account
+resource "aws_ssoadmin_account_assignment" "shared_services_admin_assignment" {
+	instance_arn = tolist(data.aws_ssoadmin_instances.main.arns)[0]
+	permission_set_arn = aws_ssoadmin_permission_set.administrator_access.arn
+	target_id = aws_organizations_account.shared_services.id
+	principal_type = "GROUP"
+	principal_id = "2458a468-f061-707b-daaa-2242295c93dc"
+	target_type = "AWS_ACCOUNT"
+ }
+
+# Assign AWSAdministratorAccess permission set to the Workload Account
+resource "aws_ssoadmin_account_assignment" "workload_admin_assignment" {
+	instance_arn = tolist(data.aws_ssoadmin_instances.main.arns)[0]
+	permission_set_arn = aws_ssoadmin_permission_set.administrator_access.arn
+	target_id = aws_organizations_account.workload.id
+	principal_type = "GROUP"
+	principal_id = "2458a468-f061-707b-daaa-2242295c93dc"
+	target_type = "AWS_ACCOUNT"
+ }
+
+# Assign AWSAdministratorAccess permission set to Sandbox Account
+resource "aws_ssoadmin_account_assignment" "sandbox_admin_assignment" {
+	instance_arn = tolist(data.aws_ssoadmin_instances.main.arns)[0]
+	permission_set_arn = aws_ssoadmin_permission_set.administrator_access.arn
+	target_id = aws_organizations_account.sandbox.id
+	principal_type = "GROUP"
+	principal_id = "2458a468-f061-707b-daaa-2242295c93dc"
+	target_type = "AWS_ACCOUNT"
+ }
